@@ -261,8 +261,8 @@ def analyzer(data):
 
 #access 日志文件
 #filters 过滤文件
-#preference 
-#输出文件类型
+#preference控制参数
+#output输出文件类型
 def scalper(access, filters, preferences = [], output = "text"):
     global table
     if not os.path.isfile(access):
@@ -284,6 +284,13 @@ def scalper(access, filters, preferences = [], output = "text"):
     regs = {} # type => (reg.compiled, impact, description, rule)
 
     print "Loading XML file '%s'..." % filters
+    #-解析过滤器文件-#
+    #table是一个全局变量字典，key为正则表达式的hash值，value为tuple,
+    #记录该rule的re.compile，影响系数impact，描述description，正则表达式，以及正则表达式的hash值
+
+    #regs为dict，key为攻击类型xss, sqli, csrf, dos, dt, spam, id, ref, lfi; value为正则表达式的hash
+    
+    #所有的过滤规则都保存在字典regs中
     for group in xml_filters:
         for f in xml_filters[group]:
             if f == 'filter':
@@ -317,12 +324,19 @@ def scalper(access, filters, preferences = [], output = "text"):
                             if impact > -1:
                                 table[_hash] = (compiled, impact, description, rule, _hash)
                                 regs[t].append(_hash)
+    #-解析过滤器文件结束-#
+
+
+    #未指定查找的攻击类型则默认查找所有类型的攻击
     if len(preferences['attack_type']) < 1:
         preferences['attack_type'] = regs.keys()
+
+    #falg保存所有的分析结果
     flag = {} # {type => { impact => ({log_line dict}, rule, description, org_line) }}
 
     print "Processing the file '%s'..." % access
 
+    #选择分析日志的样本
     sample, sampled_lines = False, []
     if preferences['sample'] != float(100):
         # get the number of lines
@@ -337,11 +351,14 @@ def scalper(access, filters, preferences = [], output = "text"):
     old_diff = 0
     start = time.time()
     diff = []
+    #逐行处理日志
     with open(access) as log_file:
         for line in log_file:
             lines += 1
+            #如果设置了样本采集则判断当前行是否为所采集的样本
             if sample and lines not in sampled_lines:
                 continue
+            #分割提取一条日志中的详细信息
             if c_reg.match(line):
                 out = c_reg.search(line)
                 ip = out.group(1)
@@ -355,6 +372,7 @@ def scalper(access, filters, preferences = [], output = "text"):
                 referrer = out.group(9)
                 agent = out.group(10)
 
+                #如果日志的日期不在给定的日期内在不处理
                 if not correct_period(date, preferences['period']):
                     continue
                 loc += 1
@@ -366,6 +384,7 @@ def scalper(access, filters, preferences = [], output = "text"):
             # mainly testing purposes...
             if nb_lines > 0 and lines > nb_lines:
                 break
+        #逐行处理日志结束
 
     tt = time.time() - start
     n = 0
@@ -376,6 +395,8 @@ def scalper(access, filters, preferences = [], output = "text"):
     print "\tProcessed %d lines over %d" % (loc,lines)
     print "\tFound %d attack patterns in %f s" % (n,tt)
 
+
+    #保存结果到文件中
     short_name = access[access.rfind(os.sep)+1:]
     if n > 0:
         print "Generating output in %s%s%s_scalp_*" % (preferences['odir'],os.sep,short_name)
@@ -393,7 +414,7 @@ def scalper(access, filters, preferences = [], output = "text"):
             o_except.write(l + '\n')
         o_except.close()
 
-
+#结果输出到text文件中
 def generate_text_file(flag, access, filters, odir):
     curtime = time.strftime("%a-%d-%b-%Y", time.localtime())
     fname = '%s_scalp_%s.txt' % (access,  curtime)
@@ -404,6 +425,7 @@ def generate_text_file(flag, access, filters, odir):
         out.write("Scalped file: %s\n" % access)
         out.write("Creation date: %s\n\n" % curtime)
         for attack_type in flag:
+        	#names全局变量保存攻击类型的全称
             if attack_type in names:
                 out.write("Attack %s (%s)\n" % (names[attack_type], attack_type))
             else:
@@ -421,7 +443,7 @@ def generate_text_file(flag, access, filters, odir):
         print "Cannot open the file:", fname
     return
 
-
+#结果输出到xml文件中
 def generate_xml_file(flag, access, filters, odir):
     curtime = time.strftime("%a-%d-%b-%Y", time.localtime())
     fname = '%s_scalp_%s.xml' % (access,  curtime)
@@ -452,7 +474,7 @@ def generate_xml_file(flag, access, filters, odir):
         print "Cannot open the file:", fname
     return
     return
-
+#结果输出到html文件中
 def generate_html_file(flag, access, filters, odir):
     curtime = time.strftime("%a-%d-%b-%Y", time.localtime())
     fname = '%s_scalp_%s.html' % (access,  curtime)
@@ -491,6 +513,7 @@ def generate_html_file(flag, access, filters, odir):
 
 months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+#判断date是否在period内，
 def correct_period(date, period):
     date   = date.replace(':', '/')
     l_date = date.split('/')
